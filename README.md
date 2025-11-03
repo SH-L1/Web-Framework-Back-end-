@@ -1,60 +1,32 @@
-# Web-Framework-Back-end-
-웹프레임워크(백엔드) 프로젝트
-
-pages 폴더
-    기능 : 웹페이지의 개별 화면(페이지) 구성 파일, 전체 화면 구성
-    활용 방법 : 데이터 관리 및 하위 컴포넌트로 전달하여 화면에 출력
-    파일 설명 : 
-        - RetentionPage
-            - 방문 빈도와 재방문율 관련 페이지
-            - 출석일수가 재구매율에 영향을 미치는가에 대한 정보 전달
-            - 방문일수(visit_days)를 구간별로 나누고, 각 구간의 평균 재구매율(retained_90)을 계산
-            - 계산된 데이터를 차트 컴포넌트에 전달하여 시각화할 수 있도록 함
-            - ex) 출석일수가 10회 미만인 고객 그룹의 재구매율은 50%이지만, 10회 이상인 그룹은 80%에 달함
-        - CustomerInsightPage.tsx
-            - 고객의 인구통계학적 특정(연령대, 지역)과 패턴을 분석하여 정보 제공하는 페이지
-            - age_group 변수를 이용하여 연령대별 평균 결제 금액(total_payment_may)과 평균 체류 시간(avg_duration_min)을 계산
-            - region_city 변수를 기준으로 지역별 고객 유지율(retained_90)을 계산, 이를 통하여 시각화하여 직관적으로 식별할 수 있도록 함
-        - ChurnPredictionPage.tsx
-            - 고객 이탈 가능성을 예측하여, 잠재적 이탈 고객을 선별하여 고객 관리를 돕는 페이지
-            - visit_days와 total_payment_may 등의 변수를 이용하여 재방문 가능성이 낮은 고객들을 특정 기준으로 분류
-            - 분류된 고객 정보를 테이블 컴포넌트에 전달하여 한눈에 볼 수 있도록 테이블 생성
-        - HomePage.tex
-            - 메인 페이지
-            - 대시보드 소개 및 내비게이션 역할
-            - 주요 페이지들을 한눈에 볼 수 있도록 함
-
-components 폴더
-    기능 : UI 폴더, 차트, 테이블, 버튼 등의 독립적인 기능 단위로 구성
-    활용 방법 : 페에지 컴포넌트에 필요한 데이터를 가져와 시각화 및 화면에 출력
-    파일 설명 : 
-        - BarChart, LineChart, PieChart
-            - 데이터들을 시각화할 수 있도록 차트 생성
-            - react-chartjs-2 등과 같은 라이브러리 사용
-        - KeyMetricsCard
-            - '총 방문자 수', '월 매출액'과 같은 핵심 지표를 카드 형태로 보여줌
-            - RetentionPage나 CustomerInsightPage를 배치하여 대시보드의 현재 상태를 한눈에 파악
-        - RiskCustomerTable
-            - 이탈 가능성이 높은 고객의 목록을 표 형태로 정리
-            - ChurnPredictionPage에서 사용자가 분석 결과를 바탕으로 이탈 고객을 파악
-            - 고객 uid, visit_days, total_duration_min 등의 정보를 표로 구성
-        - TabNavigation
-            - 여러 페이지나 섹션을 전환할 수 있는 탭 메뉴
-            - App.tsx의 <Header> 컴포넌트 내에 배치하여 사용자가 '재구매율', '고객 분석', '이탈 예측' 페이지 이동을 도움
-        - Header
-            - 웹페이지 상단에 고정되는 헤더(내비게이션 바)를 담당
-            - 로고, TabNavigation.tsx와 같은 메뉴, 그리고 사용자 프로필 아이콘 등을 포함하여 모든 페이지 관리
-        - Footer
-            - 웹페이지 하단에 고정되는 푸터를 담당
-            - 사용자가 필요로 하는 기본 정보를 제공
-    
-utils 폴더
-    기능 : 데이터 가공, 복잡한 계산 수행
-    활용 방법 : 복잡한 함수들을 모아놓고 컴포넌트에서 이를 사용할 수 있도록 함
-               ex) data.csv 파일을 읽어와 차트에 필요한 형태로 변환
-    파일 설명 :
-        - dataProcessing
-            - 데이터 불러오기, 전처리, 계산 역할 수행
-            - data.csv 파일을 불러와 JSON 객체 형태로 변환
-            - 원본 데이터를 가공하거나 복잡한 로직 구현현
-            - ex) RetentionPage.tsx를 위해 visit_days 구간별 평균 재구매율을 계산하는 함수 생성
+1. 프로젝트 개요1.1. 프로젝트 명PC방 데이터 인사이트 대시보드1.2. 프로젝트 배경 및 목적최근 PC방 시장은 경쟁 심화로 단순 시간 판매를 넘어 고객 유지율(Retention) 개선이 장기적인 수익성을 좌우하는 핵심 과제가 되었습니다.본 프로젝트는 "출석형 서비스(헬스장, 스터디카페 등)에서 '출석 빈도'가 '재구매 의도'에 긍정적인 영향을 미칠 것이다"라는 가설을 기반으로, 제공된 PC방 고객 데이터를 심층 분석합니다.최종 목표는 분석 결과를 시각화하는 인터랙티브 대시보드를 구축하여, PC방 운영자가 데이터 기반의 효율적인 고객 관리 및 맞춤형 마케팅 전략을 수립할 수 있도록 지원하는 것입니다.1.3. 팀원전효배강규석임성훈장석태2. 핵심 분석 결과 (Core Insights)Python (analysis.py)을 사용한 사전 분석을 통해 다음과 같은 핵심 인사이트를 도출했습니다.방문 빈도가 재구매율의 핵심 동인 (Key Driver)상관관계 분석 결과, retained_90(90일 내 재구매 여부) 변수와 가장 강한 양의 상관관계를 가진 변수는 visit_days(방문 일수)로 확인되었습니다.재구매 확률의 정량적 측정 (Logistic Regression)로지스틱 회귀분석 결과, 방문 일수가 1일 증가할 때마다 고객의 90일 내 재구매 확률(정확히는 오즈비, Odds Ratio)이 약 11%씩 증가하는 것을 확인했습니다.이는 막연한 추측이 아닌, 데이터로 증명된 구체적인 수치이며, 대시보드의 'What-If 시뮬레이션' 기능의 핵심 근거가 됩니다.3. 기술 스택 (Tech Stack)본 프로젝트는 데이터 분석 단계와 대시보드 구현 단계에서 서로 다른 기술 스택을 사용합니다.구분목적사용 기술Data Analysis데이터 전처리 및 분석 모델 검증- Python- Pandas / Numpy- Scikit-learn (LogisticRegression)Frontend인터랙티브 대시보드 구축- React (with TypeScript)- Tailwind CSS (Styling)- Recharts (Data Visualization)4. 데이터 흐름 (Data Flow)프로젝트의 데이터는 "Python을 통한 사전 분석"과 "React를 통한 실시간 분석"의 2단계를 거칩니다.1단계: Python 전처리 (Analysis)data.csv (교수님 제공 원본)preprocessing.py 실행total_payment_may 변수의 극단적 이상치 처리 (Capping)avg_payment_per_visit 등 파생 변수 생성clean_data.csv (전처리 완료된 분석용 데이터) 생성2단계: React 대시보드 (Visualization)React 앱 실행 시, /public 폴더에 위치한 clean_data.csv 파일을 fetch API로 로드합니다.App.tsx: 로드된 전체 데이터를 allData라는 useState에 저장합니다.dataProcessing.ts: allData를 받아 analysis.py의 Pandas 로직을 TypeScript로 구현한 분석 함수 (예: calculateRetentionByVisitDays)를 실행합니다.RetentionPage.tsx: 가공된 chartData를 BarChart.tsx 컴포넌트에 props로 전달합니다.BarChart.tsx: 데이터를 받아 Recharts 라이브러리로 차트를 최종 렌더링합니다.5. 프로젝트 구조 (Frontend)create-react-app (TypeScript)를 기반으로 하며, 다음과 같은 핵심 구조를 가집니다.src/
+├── components/
+│   ├── charts/
+│   │   ├── BarChart.tsx     # (구현 완료) 범용 막대 차트
+│   │   ├── LineChart.tsx
+│   │   └── PieChart.tsx
+│   ├── dashboard/
+│   │   ├── KeyMetricsCard.tsx # 핵심 지표 (KPI) 카드
+│   │   ├── RiskCustomerTable.tsx# 이탈 위험 고객 테이블
+│   │   └── TabNavigation.tsx  # 페이지 이동 탭
+│   └── layout/
+│       ├── Header.tsx         # 상단 헤더
+│       └── Footer.tsx         # 하단 푸터
+│
+├── config/
+│   └── navigation.tsx       # 페이지 메뉴, 아이콘 등 공통 설정
+│
+├── pages/
+│   ├── HomePage.tsx           # 프로젝트 소개 페이지
+│   ├── RetentionPage.tsx      # [페이지 1] 재구매율 분석
+│   ├── CustomerInsightPage.tsx  # [페이지 2] 고객 특성 분석
+│   └── ChurnPredictionPage.tsx  # [페이지 3] 이탈 예측
+│
+├── utils/
+│   └── dataProcessing.ts    # ★ React의 데이터 분석 엔진 (TS로 구현된 Pandas)
+│
+├── App.tsx                    # 메인 라우터, 데이터 로딩 및 상태 관리
+└── index.css                  # Tailwind CSS 설정
+6. 대시보드 페이지 구성기획서에 따라 대시보드는 3개의 핵심 분석 페이지로 구성됩니다.[Page 1] 재구매율 분석 (RetentionPage)목표: "꾸준한 방문이 재구매로 이어진다"는 핵심 인사이트 증명.주요 기능:방문 일수 구간별 재구매율 (구현 완료): visit_days를 5개 구간(1-2일, 3-5일...)으로 나누어 평균 retained_90을 막대 차트로 시각화합니다.[Page 2] 고객 특성 분석 (CustomerInsightPage)목표: 주요 고객층(연령/지역)을 파악하고 맞춤 마케팅 근거 마련.주요 기능 (구현 예정):연령대별 분석: age_group별 평균 결제 금액, 평균 체류 시간 시각화.지역별 분석: region_city별 고객 유지율 시각화.인터랙티브 필터: 연령, 지역별로 차트 데이터를 필터링하는 기능.[Page 3] 이탈 예측 및 관리 (ChurnPredictionPage)목표: 이탈 위험 고객을 선제적으로 관리하고, 방문 유도 전략의 효과 시뮬레이션.주요 기능 (구현 예정):What-If 시뮬레이션: analysis.py의 오즈비(11%) 값을 활용, "방문 횟수를 X회 늘리면 재구매율이 Y%로 증가"하는 가상 시나리오 분석.이탈 위험 고객 목록: 방문 빈도가 낮은 고객을 RiskCustomerTable로 추출.7. 프로젝트 실행 방법저장소를 클론합니다.git clone [repository-url]
+cd [project-folder]
+필요한 라이브러리를 설치합니다.npm install
+(필수) clean_data.csv 파일을 public/ 폴더 내에 위치시킵니다.프로젝트를 시작합니다.npm start

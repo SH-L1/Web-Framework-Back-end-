@@ -29,7 +29,6 @@
 // 1. useMemo, useState, useEffect 불러오기
 import React, { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
-// 2. (강력 추천) 차트 라이브러리 불러오기 (일단 설치부터!)
 // 터미널: npm install recharts @types/recharts
 import {
   BarChart,
@@ -57,7 +56,7 @@ interface CsvData {
   retained_june: string;
   retained_july: string;
   retained_august: string;
-  retained_90: string; // <-- 이것도 핵심 컬럼
+  retained_90: string;
 }
 
 const RetentionPage: React.FC = () => {

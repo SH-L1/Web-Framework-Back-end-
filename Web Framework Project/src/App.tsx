@@ -21,7 +21,7 @@ const App: React.FC = () => {
         return <ChurnPredictionPage />;
       case 'Home':
       default:
-        return <HomePage />;
+        return <HomePage onNavigate={setCurrentPage} />;
     }
   }, [currentPage]);
 
@@ -39,4 +39,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

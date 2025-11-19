@@ -50,7 +50,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
     <div className="p-8 max-w-4xl mx-auto bg-white rounded-xl shadow-lg mt-8">
       <h1 className="text-4xl font-bold text-blue-600 mb-4">PC방 고객 인사이트 대시보드</h1>
       <p className="text-lg text-gray-600 mb-6">
-        데이터 기반의 효율적 고객 관리와 맞춤 마케팅 전략 수립을 위한 핵심 도구입니다.
+        데이터 기반의 효율적 고객 관리와 맞춤 마케팅 전략 수립을 위한 사이트입니다
       </p>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
@@ -87,8 +87,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
 
             {page.key === 'Retention' && (
               <>
-                <p className="text-sm text-gray-700 mt-2 mb-4 flex-grow"> 
-                  방문 빈도가 높을수록 재구매율이 급격히 상승합니다.
+                <p className="text-sm text-gray-700 mt-2 mb-4 flex-grow **w-full** text-center"> 
+                  방문 빈도가 높을수록 <br /> 재구매율이 급격히 상승합니다
                 </p>
                 <div className="mt-3 space-y-1">
                   <div className="flex items-center">
@@ -109,8 +109,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
 
             {page.key === 'Customer' && (
               <>
-                <p className="text-sm text-gray-700 mt-2 mb-4 flex-grow">
-                  '20대' 연령층이 평균 결제 금액과 체류 시간 모두 가장 높게 나타납니다.
+                <p className="text-sm text-gray-700 mt-2 mb-4 flex-grow **w-full** text-center">
+                  '20대' 연령층의 <br /> 평균 결제 금액과 체류 시간 <br /> 모두 가장 높게 나타납니다
                 </p>
                 <div className="mt-3 space-y-1">
                   <div className="flex items-center" title="20대 (매우 높음)">
@@ -135,8 +135,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
 
             {page.key === 'Churn' && (
               <>
-                <p className="text-sm text-gray-700 mt-2 mb-4 flex-grow">
-                  선제적 관리가 필요한 '이탈 위험군' 고객 목록을 즉시 확인할 수 있습니다.
+                <p className="text-sm text-gray-700 mt-2 mb-4 flex-grow **w-full** text-center">
+                  선제적 관리가 필요한 <br /> '이탈 위험군' 고객 목록을 <br /> 즉시 확인할 수 있습니다
                 </p>
                 <div className="mt-3 p-3 bg-white rounded shadow-inner text-center">
                   <p className="text-sm text-gray-700">분석된 위험 고객</p>

@@ -29,7 +29,6 @@
 // 1. useMemo, useState, useEffect 불러오기
 import React, { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
-// 터미널: npm install recharts @types/recharts
 import {
   BarChart,
   Bar,
@@ -41,32 +40,62 @@ import {
   CartesianGrid,
 } from 'recharts';
 
-// 3. (공통) CSV 데이터 타입 정의 (ChurnPredictionPage랑 같음)
+// --- 1. [추가] 필터링을 위한 한글/영어 변환 맵 ---
+const KOREAN_TO_ENGLISH_AGE_MAP: { [key: string]: string } = {
+  '10대': 'Teens',
+  '20대': 'Twenties',
+  '30대': 'Thirties',
+  '40대': 'Forties+', // 40대는 Forties+와 매칭
+  '기타': 'Others',
+};
+
+const KOREAN_TO_ENGLISH_REGION_MAP: { [key: string]: string } = {
+  '서울': 'Seoul', '경기': 'Gyeonggi-do', '인천': 'Incheon', '강원': 'Gangwon-do',
+  '충남': 'Chungcheongnam-do', '충북': 'Chungcheongbuk-do', '대전': 'Daejeon',
+  '세종': 'Sejong', '경남': 'Gyeongsangnam-do', '경북': 'Gyeongsangbuk-do',
+  '부산': 'Busan', '울산': 'Ulsan', '대구': 'Daegu', '전남': 'Jeollanam-do',
+  '전북': 'Jeollabuk-do', '광주': 'Gwangju', '제주': 'Jeju', '기타': 'Others',
+};
+
+// 가격 범위 맵 (Key: 한글 라벨, Value: [최소, 최대])
+const PRICE_RANGE_MAP: { [key: string]: [number, number] } = {
+  '~ 10,000원': [0, 10000],
+  '10,001 ~ 50,000원': [10001, 50000],
+  '50,001 ~ 100,000원': [50001, 100000],
+  '100,001원 ~': [100001, Infinity],
+};
+// ----------------------------------------------------
+
+// 2. [수정] CsvData 타입에 total_payment_may 추가 (필수)
 interface CsvData {
   uid: string;
   region_city_group: string;
-  region_city_group_no: string;
-  region_city: string;
   age_group: string;
-  age: string;
-  visit_days: string; // <-- 이번에 쓸 핵심 컬럼
-  total_duration_min: string;
-  avg_duration_min: string;
-  total_payment_may: string;
-  retained_june: string;
-  retained_july: string;
-  retained_august: string;
+  visit_days: string;
   retained_90: string;
+  total_payment_may: string; // <--- 가격 필터용
+  // ... (다른 컬럼들)
 }
 
-const RetentionPage: React.FC = () => {
-  // 4. (공통) 데이터 로딩 state
-  const [customerData, setCustomerData] = useState<CsvData[]>([]);
+// 3. [추가] App.tsx로부터 받을 props 타입
+interface RetentionPageProps {
+  selectedAgeGroups: string[];
+  selectedRegions: string[];
+  selectedPriceRanges: string[];
+}
+
+// 4. [수정] props 받기
+const RetentionPage: React.FC<RetentionPageProps> = ({
+  selectedAgeGroups,
+  selectedRegions,
+  selectedPriceRanges,
+}) => {
+  const [originalData, setOriginalData] = useState<CsvData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 5. (공통) CSV 데이터 로딩 로직
+  // 5. CSV 로딩 (수정 없음)
   useEffect(() => {
-    const csvFilePath = '/data.csv'; // public 폴더
+    const csvFilePath = '/data.csv';
     fetch(csvFilePath)
       .then((res) => res.text())
       .then((csvText) => {
@@ -74,45 +103,75 @@ const RetentionPage: React.FC = () => {
           header: true,
           skipEmptyLines: true,
           complete: (results: Papa.ParseResult<CsvData>) => {
-            setCustomerData(results.data);
+            setOriginalData(results.data);
             setIsLoading(false);
           },
-          error: (err: any) => {
-            console.error('RetentionPage CSV 파싱 에러:', err);
-            setIsLoading(false);
-          },
+          error: (err: any) => { console.error('RetentionPage CSV 파싱 에러:', err); setIsLoading(false); },
         });
       })
-      .catch((err) => {
-        console.error('RetentionPage 파일 읽기 에러:', err);
-        setIsLoading(false);
-      });
+      .catch((err) => { console.error('RetentionPage 파일 읽기 에러:', err); setIsLoading(false); });
   }, []);
 
-  // =================================================================
-  // 🚀 [핵심 로직 1] 전체 90일 재구매율 계산 (useMemo 사용)
-  // =================================================================
+  // 6. [수정] 필터가 적용된 데이터를 계산하는 useMemo
+  const filteredData = useMemo(() => {
+    if (isLoading || originalData.length === 0) {
+      return [];
+    }
+
+    // 6a. 필터링을 위한 영어 키/값 변환
+    const englishAgeGroups = selectedAgeGroups.map(age => KOREAN_TO_ENGLISH_AGE_MAP[age]).filter(Boolean);
+    const englishRegions = selectedRegions.map(region => KOREAN_TO_ENGLISH_REGION_MAP[region]).filter(Boolean);
+    const priceRanges = selectedPriceRanges.map(range => PRICE_RANGE_MAP[range]).filter(Boolean);
+
+    return originalData.filter((c) => {
+      // 6b. 연령대 필터
+      if (
+        englishAgeGroups.length > 0 &&
+        !englishAgeGroups.includes(c.age_group || 'Others')
+      ) {
+        return false;
+      }
+      
+      // 6c. 지역 필터
+      if (
+        englishRegions.length > 0 &&
+        !englishRegions.includes(c.region_city_group || 'Others')
+      ) {
+        return false;
+      }
+      
+      // 6d. [새로 추가] 가격 필터
+      if (priceRanges.length > 0) {
+        const payment = Number(c.total_payment_may) || 0;
+        // 선택된 가격 범위 중 하나라도 만족(some)하면 통과
+        const isInPriceRange = priceRanges.some(([min, max]) => 
+          payment >= min && payment <= max
+        );
+        if (!isInPriceRange) {
+          return false; // 만족하는 범위가 하나도 없으면 탈락
+        }
+      }
+      
+      return true; // 모든 필터 통과
+    });
+  }, [originalData, isLoading, selectedAgeGroups, selectedRegions, selectedPriceRanges]);
+
+  // 7. [수정] 전체 재구매율 (filteredData 사용)
   const overallRetentionRate = useMemo(() => {
-    // customerData가 비어있으면 계산 안 함
-    if (customerData.length === 0) return 0; 
+    if (filteredData.length === 0) return 0;
     
-    // retained_90이 '1'인 고객 수
-    const retainedCount = customerData.filter(
+    const retainedCount = filteredData.filter(
       (c) => c.retained_90 === '1'
     ).length;
     
-    // (재구매 고객 / 전체 고객) * 100
-    return (retainedCount / customerData.length) * 100;
+    return (retainedCount / filteredData.length) * 100;
 
-  }, [customerData]); // customerData가 바뀔 때만 재계산!
+  }, [filteredData]);
 
-  // =================================================================
-  // 7. [핵심 로직 2] 방문 일수 구간별 재구매율 (dataProcessing.ts 역할)
-  // =================================================================
+  // 8. [수정] 방문일수별 재구매율 (filteredData 사용)
   const retentionByVisitDays = useMemo(() => {
-    if (customerData.length === 0) return [];
+    if (filteredData.length === 0) return [];
 
-    // '방문 일수'를 기준으로 고객을 그룹화할 통계 객체
     const segments: { [key: string]: { total: number, retained: number } } = {
       '1일': { total: 0, retained: 0 },
       '2-3일': { total: 0, retained: 0 },
@@ -121,9 +180,8 @@ const RetentionPage: React.FC = () => {
       '15일+': { total: 0, retained: 0 },
     };
 
-    // 22,000+ 데이터를 싹 돌면서 그룹에 집어넣기
-    customerData.forEach(customer => {
-      const visitDays = Number(customer.visit_days); // "5" -> 5
+    filteredData.forEach(customer => {
+      const visitDays = Number(customer.visit_days);
       const isRetained = customer.retained_90 === '1';
 
       let segmentName: keyof typeof segments | null = null;
@@ -133,71 +191,59 @@ const RetentionPage: React.FC = () => {
       else if (visitDays >= 8 && visitDays <= 14) segmentName = '8-14일';
       else if (visitDays >= 15) segmentName = '15일+';
 
-      // 해당 그룹에 속하면
       if (segmentName) {
-        segments[segmentName].total++; // +1명
+        segments[segmentName].total++;
         if (isRetained) {
-          segments[segmentName].retained++; // 재구매도 했으면 +1명
+          segments[segmentName].retained++;
         }
       }
     });
 
-    // 차트 라이브러리가 쓰기 좋은 배열 형태로 변환
     return Object.entries(segments).map(([name, counts]) => ({
-      name: name, // 예: "1일", "2-3일"
-      // (재구매 / 전체) * 100, 소수점 1자리까지
-      '재구매율 (%)': (counts.total > 0) 
-        ? parseFloat(((counts.retained / counts.total) * 100).toFixed(1)) 
+      name: name,
+      '재구매율 (%)': (counts.total > 0)
+        ? parseFloat(((counts.retained / counts.total) * 100).toFixed(1))
         : 0,
       '고객 수': counts.total,
     }));
     
-  }, [customerData]); // 이것도 customerData 바뀔 때만 재계산
+  }, [filteredData]);
 
   
-  // 8. (수정된 JSX) 계산된 데이터를 화면에 렌더링
+  // 9. JSX 렌더링 (filteredData.length로 예외처리)
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">1. 재구매율 분석 (출석 빈도)</h1>
-      <div className="bg-white p-6 rounded-xl shadow-lg min-h-[400px]">
-        <p className="text-gray-700 mb-4">
-          <strong>핵심 인사이트:</strong> 꾸준한 방문 유도가 장기 고객 유지의 핵심이며, 출석일수 1일 증가 시 재구매 확률이 크게 증가합니다.
-        </p>
-        
+      <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">재구매율 분석 (출석 빈도)</h1>
+      <div className="bg-white p-6 rounded-xl shadow-lg min-h-[400px]">        
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* 핵심 지표 카드 */}
-          <div className="lg:col-span-1 border p-4 rounded-lg bg-green-50">
-            <h3 className="font-semibold text-lg text-green-700">핵심 지표 카드</h3>
+          <div className="lg-col-span-1 border p-4 rounded-lg bg-green-50">
+            <h3 className="font-semibold text-lg text-green-700">핵심 지표</h3>
             <p className="text-2xl font-bold mt-2">
-              90일 재구매율: 
+              90일간 재구매율: 
               <strong className="ml-2 text-green-800">
-                {/* 로딩 중이면 '...' 표시, 아니면 계산된 값 표시 (소수점 1자리) */}
-                {isLoading ? '...' : `${overallRetentionRate.toFixed(1)}%`}
+                {isLoading ? '...' : (filteredData.length === 0 ? '0.0%' : `${overallRetentionRate.toFixed(1)}%`)}
               </strong>
             </p>
-            <p className='text-sm text-gray-600 mt-2'>(총 {customerData.length.toLocaleString()}명 대상)</p>
+            <p className='text-sm text-gray-600 mt-2'>(총 {filteredData.length.toLocaleString()}명 대상)</p>
           </div>
           
-          {/* BarChart */}
           <div className="lg:col-span-2 border p-4 rounded-lg bg-white shadow-md">
             <h3 className="font-semibold text-lg mb-2">방문 일수 구간별 평균 재구매율 (BarChart)</h3>
             
             {isLoading ? (
               <p className="text-sm text-gray-500">데이터 로딩 중...</p>
             ) : (
-              // 9. Recharts로 차트 그리기 (높이 300px)
               <div style={{ width: '100%', height: 300 }}>
                 <ResponsiveContainer>
                   <BarChart
-                    data={retentionByVisitDays} // <-- 7번에서 계산한 데이터를 여기에 쏙!
+                    data={retentionByVisitDays}
                     margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" /> {/* X축은 'name' ("1일", "2-3일", ...) */}
-                    <YAxis unit="%" /> {/* Y축은 '%' 단위 */}
-                    <Tooltip 
-                      // 툴팁(마우스 올리면 나오는 창) 포맷 이쁘게
+                    <XAxis dataKey="name" />
+                    <YAxis unit="%" />
+                    <Tooltip
                       formatter={(value: number, name: string) => {
                         if (name === '재구매율 (%)') return [`${value}%`, '재구매율'];
                         if (name === '고객 수') return [value.toLocaleString(), '고객 수'];
@@ -205,7 +251,7 @@ const RetentionPage: React.FC = () => {
                       }}
                     />
                     <Legend />
-                    <Bar dataKey="재구매율 (%)" fill="#4ade80" /> {/* 초록색 바 */}
+                    <Bar dataKey="재구매율 (%)" fill="#4ade80" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

@@ -40,71 +40,151 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
 
+// --- 1. [추가] 필터링을 위한 한글/영어 변환 맵 ---
+const KOREAN_TO_ENGLISH_AGE_MAP: { [key: string]: string } = {
+  '10대': 'Teens',
+  '20대': 'Twenties',
+  '30대': 'Thirties',
+  '40대': 'Forties+', // 40대는 Forties+와 매칭
+  '기타': 'Others',
+};
+
+const KOREAN_TO_ENGLISH_REGION_MAP: { [key: string]: string } = {
+  '서울': 'Seoul', '경기': 'Gyeonggi-do', '인천': 'Incheon', '강원': 'Gangwon-do',
+  '충남': 'Chungcheongnam-do', '충북': 'Chungcheongbuk-do', '대전': 'Daejeon',
+  '세종': 'Sejong', '경남': 'Gyeongsangnam-do', '경북': 'Gyeongsangbuk-do',
+  '부산': 'Busan', '울산': 'Ulsan', '대구': 'Daegu', '전남': 'Jeollanam-do',
+  '전북': 'Jeollabuk-do', '광주': 'Gwangju', '제주': 'Jeju', '기타': 'Others',
+};
+
+// 가격 범위 맵 (Key: 한글 라벨, Value: [최소, 최대])
+const PRICE_RANGE_MAP: { [key: string]: [number, number] } = {
+  '~ 10,000원': [0, 10000],
+  '10,001 ~ 50,000원': [10001, 50000],
+  '50,001 ~ 100,000원': [50001, 100000],
+  '100,001원 ~': [100001, Infinity],
+};
+// ----------------------------------------------------
+
+// 2. [수정] CsvData 타입 (필요한 컬럼만 남김)
 interface CsvData {
   uid: string;
+  region_city_group: string;
   region_city: string;
+  age_group: string;
   age: string;
   visit_days: string;
   total_payment_may: string;
-  retained_90: string; 
+  retained_90: string;
 }
 
-const ChurnPredictionPage: React.FC = () => {
-  const [customerData, setCustomerData] = useState<CsvData[]>([]);
+// 3. [추가] App.tsx로부터 받을 props 타입
+interface ChurnPredictionPageProps {
+  selectedAgeGroups: string[];
+  selectedRegions: string[];
+  selectedPriceRanges: string[];
+}
+
+// 4. [수정] props 받기
+const ChurnPredictionPage: React.FC<ChurnPredictionPageProps> = ({
+  selectedAgeGroups,
+  selectedRegions,
+  selectedPriceRanges,
+}) => {
+  const [originalData, setOriginalData] = useState<CsvData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [simulationDays, setSimulationDays] = useState(15); // 1-15 scale
+  const [simulationDays, setSimulationDays] = useState(15);
 
+  // 5. CSV 로딩 (수정 없음)
   useEffect(() => {
-    const csvFilePath = '/data.csv'; 
-
+    const csvFilePath = '/data.csv';
     fetch(csvFilePath)
       .then((response) => response.text())
       .then((csvText) => {
         Papa.parse(csvText, {
-          header: true, 
-          skipEmptyLines: true, 
-          complete: (results: Papa.ParseResult<CsvData>) => { 
-            setCustomerData(results.data); 
-            setIsLoading(false); 
+          header: true,
+          skipEmptyLines: true,
+          complete: (results: Papa.ParseResult<CsvData>) => {
+            setOriginalData(results.data);
+            setIsLoading(false);
           },
-          error: (error: any) => { 
-            console.error('CSV 파싱 에러:', error);
-            setIsLoading(false); 
-          },
+          error: (error: any) => { console.error('CSV 파싱 에러:', error); setIsLoading(false); },
         });
       })
-      .catch((err) => {
-        console.error('파일 읽기 에러:', err);
-        setIsLoading(false);
-      });
+      .catch((err) => { console.error('파일 읽기 에러:', err); setIsLoading(false); });
   }, []);
 
+  // 6. [수정] 필터가 적용된 데이터를 계산하는 useMemo
+  const filteredData = useMemo(() => {
+    if (isLoading || originalData.length === 0) {
+      return [];
+    }
+    
+    // 6a. 필터링을 위한 영어 키/값 변환
+    const englishAgeGroups = selectedAgeGroups.map(age => KOREAN_TO_ENGLISH_AGE_MAP[age]).filter(Boolean);
+    const englishRegions = selectedRegions.map(region => KOREAN_TO_ENGLISH_REGION_MAP[region]).filter(Boolean);
+    const priceRanges = selectedPriceRanges.map(range => PRICE_RANGE_MAP[range]).filter(Boolean);
+
+    return originalData.filter((c) => {
+      // 6b. 연령대 필터
+      if (
+        englishAgeGroups.length > 0 &&
+        !englishAgeGroups.includes(c.age_group || 'Others')
+      ) {
+        return false;
+      }
+      
+      // 6c. 지역 필터
+      if (
+        englishRegions.length > 0 &&
+        !englishRegions.includes(c.region_city_group || 'Others')
+      ) {
+        return false;
+      }
+
+      // 6d. [새로 추가] 가격 필터
+      if (priceRanges.length > 0) {
+        const payment = Number(c.total_payment_may) || 0;
+        const isInPriceRange = priceRanges.some(([min, max]) => 
+          payment >= min && payment <= max
+        );
+        if (!isInPriceRange) {
+          return false;
+        }
+      }
+      
+      return true; // 모든 필터 통과
+    });
+  }, [originalData, isLoading, selectedAgeGroups, selectedRegions, selectedPriceRanges]);
+
+  // 7. [수정] 이하 모든 useMemo가 'filteredData'를 사용하도록 의존성 변경
   const churnRiskCustomers = useMemo(() => {
-    return customerData.filter(
+    return filteredData.filter(
       (customer) => customer.retained_90 === '0'
     );
-  }, [customerData]);
+  }, [filteredData]);
 
   const baselineStats = useMemo(() => {
-    if (customerData.length === 0) {
+    if (filteredData.length === 0) {
       return { rate: 0, avgRevenuePerRetained: 0, totalCustomers: 0, baselineRetainedRevenue: 0 };
     }
     
-    const retainedCustomers = customerData.filter(c => c.retained_90 === '1');
+    const retainedCustomers = filteredData.filter(c => c.retained_90 === '1');
     const totalRetained = retainedCustomers.length;
-    const totalCustomers = customerData.length;
+    const totalCustomers = filteredData.length;
     
-    const baselineRate = (totalRetained / totalCustomers);
+    // [수정] totalCustomers가 0일 때 NaN 방지
+    const baselineRate = totalCustomers > 0 ? (totalRetained / totalCustomers) : 0;
     
     const retainedRevenue = retainedCustomers.reduce((sum, c) => sum + Number(c.total_payment_may), 0);
     const avgRevenuePerRetained = totalRetained > 0 ? (retainedRevenue / totalRetained) : 0;
     const baselineRetainedRevenue = totalRetained * avgRevenuePerRetained;
 
     return { rate: baselineRate, avgRevenuePerRetained, totalCustomers, baselineRetainedRevenue };
-  }, [customerData]);
+  }, [filteredData]);
 
   const retentionRatesByDayGroup = useMemo(() => {
-    if (customerData.length === 0) return {};
+    if (filteredData.length === 0) return {};
 
     const segments: { [key: string]: { total: number, retained: number } } = {
       '1일': { total: 0, retained: 0 },
@@ -114,7 +194,7 @@ const ChurnPredictionPage: React.FC = () => {
       '15일+': { total: 0, retained: 0 },
     };
 
-    customerData.forEach(customer => {
+    filteredData.forEach(customer => {
       const visitDays = Number(customer.visit_days) || 0;
       const isRetained = customer.retained_90 === '1';
 
@@ -138,8 +218,9 @@ const ChurnPredictionPage: React.FC = () => {
       rates[name] = (counts.total > 0) ? (counts.retained / counts.total) : 0;
     });
     return rates;
-  }, [customerData]);
+  }, [filteredData]);
   
+  // (시뮬레이션 로직은 수정 없음, baselineStats 등을 그대로 사용)
   const rateAnchorPoints = useMemo(() => {
     if (isLoading || Object.keys(retentionRatesByDayGroup).length === 0) return [];
     const rates = retentionRatesByDayGroup;
@@ -175,6 +256,11 @@ const ChurnPredictionPage: React.FC = () => {
   };
 
   const simulationStats = useMemo(() => {
+    // [수정] 0으로 나누기 방지
+    if (baselineStats.totalCustomers === 0) {
+      return { rateChange: 0, revenueChange: 0, simulatedRate: 0 };
+    }
+    
     const simulatedRate = getInterpolatedRate(simulationDays);
     const simulatedRetainedCount = baselineStats.totalCustomers * simulatedRate;
     const simulatedRevenue = simulatedRetainedCount * baselineStats.avgRevenuePerRetained;
@@ -183,8 +269,9 @@ const ChurnPredictionPage: React.FC = () => {
     const revenueChange = simulatedRevenue - baselineStats.baselineRetainedRevenue;
 
     return { rateChange, revenueChange, simulatedRate: simulatedRate * 100 };
-  }, [simulationDays, baselineStats, rateAnchorPoints]);
+  }, [simulationDays, baselineStats, getInterpolatedRate]); // [수정] getInterpolatedRate 추가
 
+  // 포맷팅 함수 (수정 없음)
   const formatPercentage = (num: number) => {
     const fixedNum = num.toFixed(1);
     if (num > 0) return `+${fixedNum}%`;
@@ -198,9 +285,10 @@ const ChurnPredictionPage: React.FC = () => {
     return `${formattedNum} 원`;
   };
 
+  // 8. JSX 렌더링 (수정 없음, filteredData 기반으로 자동 업데이트됨)
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">3. 이탈 예측 및 가상 시나리오</h1>
+      <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">이탈 예측 및 가상 시나리오</h1>
       <div className="bg-white p-6 rounded-xl shadow-lg min-h-[400px]">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 border p-4 rounded-lg bg-blue-50 shadow-md">
@@ -255,7 +343,7 @@ const ChurnPredictionPage: React.FC = () => {
             {isLoading ? (
               <p className="text-gray-600">데이터 로딩 중...</p>
             ) : (
-              <div className="overflow-auto max-h-80">
+              <div className="overflow-auto max-h-80"> 
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-red-100 sticky top-0">
                     <tr>
@@ -288,10 +376,10 @@ const ChurnPredictionPage: React.FC = () => {
         </div>
         
         <div className="mt-8 border p-6 rounded-xl bg-yellow-50 shadow-md">
-             <h3 className="font-semibold text-xl text-yellow-700 mb-3">마케팅 템플릿 추천 및 메모 (4.1.5)</h3>
-             <p className="text-sm text-gray-600">
-               인사이트 기반으로 "점심시간 1시간 무료 쿠폰" 등의 템플릿 추천 기능 구현 예정.
-             </p>
+            <h3 className="font-semibold text-xl text-yellow-700 mb-3">마케팅 템플릿 추천 및 메모 (4.1.5)</h3>
+            <p className="text-sm text-gray-600">
+              인사이트 기반으로 "점심시간 1시간 무료 쿠폰" 등의 템플릿 추천 기능 구현 예정.
+            </p>
         </div>
       </div>
     </div>

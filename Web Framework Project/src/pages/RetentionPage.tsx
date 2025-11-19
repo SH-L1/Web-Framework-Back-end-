@@ -1,257 +1,159 @@
-// import React from 'react';
-
-// const RetentionPage: React.FC = () => (
-//   <div className="p-6 max-w-7xl mx-auto">
-//     <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">1. 재구매율 분석 (출석 빈도)</h1>
-//     <div className="bg-white p-6 rounded-xl shadow-lg min-h-[400px]">
-//       <p className="text-gray-700 mb-4">
-//         <strong>핵심 인사이트:</strong> 꾸준한 방문 유도가 장기 고객 유지의 핵심이며, 출석일수 1일 증가 시 재구매 확률이 크게 증가합니다.
-//       </p>
-//       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-// =        <div className="lg:col-span-1 border p-4 rounded-lg bg-green-50">
-//           <h3 className="font-semibold text-lg text-green-700">핵심 지표 카드</h3>
-//           <p>90일 재구매율: <strong>XX.X%</strong></p>
-//         </div>
-        
-// =        <div className="lg:col-span-2 border p-4 rounded-lg bg-white shadow-md">
-//           <h3 className="font-semibold text-lg mb-2">방문 일수 구간별 평균 재구매율 (BarChart)</h3>
-//           <p className="text-sm text-gray-500">
-//             *dataProcessing.ts 함수를 사용하여 visit_days를 구간별로 나누고 재구매율 계산 후 시각화 예정*
-//           </p>
-//         </div>
-//       </div>
-//     </div>
-//   </div>
-// );
-
-// export default RetentionPage;
-
-// 1. useMemo, useState, useEffect 불러오기
 import React, { useState, useEffect, useMemo } from 'react';
-import Papa from 'papaparse';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  CartesianGrid,
-} from 'recharts';
+import { useUserConfig } from '../context/UserConfigContext';
+import DataFilter from '../components/dashboard/DataFilter';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
-// --- 1. [추가] 필터링을 위한 한글/영어 변환 맵 ---
-const KOREAN_TO_ENGLISH_AGE_MAP: { [key: string]: string } = {
-  '10대': 'Teens',
-  '20대': 'Twenties',
-  '30대': 'Thirties',
-  '40대': 'Forties+', // 40대는 Forties+와 매칭
-  '기타': 'Others',
-};
-
-const KOREAN_TO_ENGLISH_REGION_MAP: { [key: string]: string } = {
-  '서울': 'Seoul', '경기': 'Gyeonggi-do', '인천': 'Incheon', '강원': 'Gangwon-do',
-  '충남': 'Chungcheongnam-do', '충북': 'Chungcheongbuk-do', '대전': 'Daejeon',
-  '세종': 'Sejong', '경남': 'Gyeongsangnam-do', '경북': 'Gyeongsangbuk-do',
-  '부산': 'Busan', '울산': 'Ulsan', '대구': 'Daegu', '전남': 'Jeollanam-do',
-  '전북': 'Jeollabuk-do', '광주': 'Gwangju', '제주': 'Jeju', '기타': 'Others',
-};
-
-// 가격 범위 맵 (Key: 한글 라벨, Value: [최소, 최대])
-const PRICE_RANGE_MAP: { [key: string]: [number, number] } = {
-  '~ 10,000원': [0, 10000],
-  '10,001 ~ 50,000원': [10001, 50000],
-  '50,001 ~ 100,000원': [50001, 100000],
-  '100,001원 ~': [100001, Infinity],
-};
-// ----------------------------------------------------
-
-// 2. [수정] CsvData 타입에 total_payment_may 추가 (필수)
 interface CsvData {
   uid: string;
-  region_city_group: string;
-  age_group: string;
   visit_days: string;
   retained_90: string;
-  total_payment_may: string; // <--- 가격 필터용
-  // ... (다른 컬럼들)
+  region_city: string;
+  age: string;
 }
 
-// 3. [추가] App.tsx로부터 받을 props 타입
-interface RetentionPageProps {
-  selectedAgeGroups: string[];
-  selectedRegions: string[];
-  selectedPriceRanges: string[];
-}
-
-// 4. [수정] props 받기
-const RetentionPage: React.FC<RetentionPageProps> = ({
-  selectedAgeGroups,
-  selectedRegions,
-  selectedPriceRanges,
-}) => {
-  const [originalData, setOriginalData] = useState<CsvData[]>([]);
+const RetentionPage: React.FC = () => {
+  const { config } = useUserConfig();
+  const [allData, setAllData] = useState<CsvData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 5. CSV 로딩 (수정 없음)
+  // 로컬 필터 상태
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [selectedAges, setSelectedAges] = useState<string[]>([]);
+
+  // 1. 백엔드에서 전체 데이터 로드
   useEffect(() => {
-    const csvFilePath = '/data.csv';
-    fetch(csvFilePath)
-      .then((res) => res.text())
-      .then((csvText) => {
-        Papa.parse(csvText, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results: Papa.ParseResult<CsvData>) => {
-            setOriginalData(results.data);
-            setIsLoading(false);
-          },
-          error: (err: any) => { console.error('RetentionPage CSV 파싱 에러:', err); setIsLoading(false); },
-        });
-      })
-      .catch((err) => { console.error('RetentionPage 파일 읽기 에러:', err); setIsLoading(false); });
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch(`http://localhost:5000/api/customers/all`);
+        const result = await response.json();
+        setAllData(result);
+      } catch (error) {
+        console.error("데이터 로딩 실패:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchData();
   }, []);
 
-  // 6. [수정] 필터가 적용된 데이터를 계산하는 useMemo
-  const filteredData = useMemo(() => {
-    if (isLoading || originalData.length === 0) {
-      return [];
+  // 2. 전역 설정(config)이 변경되면 로컬 필터 초기화
+  useEffect(() => {
+    if (config.targetRegion && config.targetRegion !== '전체') {
+      setSelectedRegions([config.targetRegion]);
+    } else {
+      setSelectedRegions([]); // 전체인 경우 모두 해제 (또는 전체 선택 로직)
     }
 
-    // 6a. 필터링을 위한 영어 키/값 변환
-    const englishAgeGroups = selectedAgeGroups.map(age => KOREAN_TO_ENGLISH_AGE_MAP[age]).filter(Boolean);
-    const englishRegions = selectedRegions.map(region => KOREAN_TO_ENGLISH_REGION_MAP[region]).filter(Boolean);
-    const priceRanges = selectedPriceRanges.map(range => PRICE_RANGE_MAP[range]).filter(Boolean);
+    if (config.targetAge && config.targetAge !== '전체') {
+      setSelectedAges([config.targetAge]);
+    } else {
+      setSelectedAges([]);
+    }
+  }, [config]);
 
-    return originalData.filter((c) => {
-      // 6b. 연령대 필터
-      if (
-        englishAgeGroups.length > 0 &&
-        !englishAgeGroups.includes(c.age_group || 'Others')
-      ) {
-        return false;
-      }
-      
-      // 6c. 지역 필터
-      if (
-        englishRegions.length > 0 &&
-        !englishRegions.includes(c.region_city_group || 'Others')
-      ) {
-        return false;
-      }
-      
-      // 6d. [새로 추가] 가격 필터
-      if (priceRanges.length > 0) {
-        const payment = Number(c.total_payment_may) || 0;
-        // 선택된 가격 범위 중 하나라도 만족(some)하면 통과
-        const isInPriceRange = priceRanges.some(([min, max]) => 
-          payment >= min && payment <= max
-        );
-        if (!isInPriceRange) {
-          return false; // 만족하는 범위가 하나도 없으면 탈락
-        }
-      }
-      
-      return true; // 모든 필터 통과
+  // 3. 필터링 로직 (사이드바 체크박스 반영)
+  const filteredData = useMemo(() => {
+    return allData.filter(item => {
+      const regionMatch = selectedRegions.length === 0 || selectedRegions.includes(item.region_city);
+      const ageMatch = selectedAges.length === 0 || selectedAges.includes(item.age);
+      return regionMatch && ageMatch;
     });
-  }, [originalData, isLoading, selectedAgeGroups, selectedRegions, selectedPriceRanges]);
+  }, [allData, selectedRegions, selectedAges]);
 
-  // 7. [수정] 전체 재구매율 (filteredData 사용)
-  const overallRetentionRate = useMemo(() => {
-    if (filteredData.length === 0) return 0;
-    
-    const retainedCount = filteredData.filter(
-      (c) => c.retained_90 === '1'
-    ).length;
-    
-    return (retainedCount / filteredData.length) * 100;
-
-  }, [filteredData]);
-
-  // 8. [수정] 방문일수별 재구매율 (filteredData 사용)
-  const retentionByVisitDays = useMemo(() => {
+  // 4. 차트 데이터 가공
+  const chartData = useMemo(() => {
     if (filteredData.length === 0) return [];
 
-    const segments: { [key: string]: { total: number, retained: number } } = {
-      '1일': { total: 0, retained: 0 },
-      '2-3일': { total: 0, retained: 0 },
-      '4-7일': { total: 0, retained: 0 },
-      '8-14일': { total: 0, retained: 0 },
-      '15일+': { total: 0, retained: 0 },
-    };
+    const groups: { [key: string]: { total: number, retained: number } } = {};
+    for (let i = 1; i <= 10; i++) groups[`${i}일`] = { total: 0, retained: 0 };
+    groups['11일+'] = { total: 0, retained: 0 };
 
-    filteredData.forEach(customer => {
-      const visitDays = Number(customer.visit_days);
-      const isRetained = customer.retained_90 === '1';
-
-      let segmentName: keyof typeof segments | null = null;
-      if (visitDays === 1) segmentName = '1일';
-      else if (visitDays >= 2 && visitDays <= 3) segmentName = '2-3일';
-      else if (visitDays >= 4 && visitDays <= 7) segmentName = '4-7일';
-      else if (visitDays >= 8 && visitDays <= 14) segmentName = '8-14일';
-      else if (visitDays >= 15) segmentName = '15일+';
-
-      if (segmentName) {
-        segments[segmentName].total++;
-        if (isRetained) {
-          segments[segmentName].retained++;
-        }
+    filteredData.forEach(row => {
+      const visits = Number(row.visit_days);
+      const retained = row.retained_90 === '1';
+      let key = visits >= 11 ? '11일+' : `${visits}일`;
+      if (groups[key]) {
+        groups[key].total += 1;
+        if (retained) groups[key].retained += 1;
       }
     });
 
-    return Object.entries(segments).map(([name, counts]) => ({
-      name: name,
-      '재구매율 (%)': (counts.total > 0)
-        ? parseFloat(((counts.retained / counts.total) * 100).toFixed(1))
-        : 0,
-      '고객 수': counts.total,
+    return Object.keys(groups).map(key => ({
+      name: key,
+      retentionRate: groups[key].total > 0 ? (groups[key].retained / groups[key].total) * 100 : 0,
+      count: groups[key].total
     }));
-    
   }, [filteredData]);
 
-  
-  // 9. JSX 렌더링 (filteredData.length로 예외처리)
+  const handleRegionChange = (region: string) => {
+    setSelectedRegions(prev => prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region]);
+  };
+
+  const handleAgeChange = (age: string) => {
+    setSelectedAges(prev => prev.includes(age) ? prev.filter(a => a !== age) : [...prev, age]);
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">재구매율 분석 (출석 빈도)</h1>
-      <div className="bg-white p-6 rounded-xl shadow-lg min-h-[400px]">        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          <div className="lg-col-span-1 border p-4 rounded-lg bg-green-50">
-            <h3 className="font-semibold text-lg text-green-700">핵심 지표</h3>
-            <p className="text-2xl font-bold mt-2">
-              90일간 재구매율: 
-              <strong className="ml-2 text-green-800">
-                {isLoading ? '...' : (filteredData.length === 0 ? '0.0%' : `${overallRetentionRate.toFixed(1)}%`)}
-              </strong>
-            </p>
-            <p className='text-sm text-gray-600 mt-2'>(총 {filteredData.length.toLocaleString()}명 대상)</p>
-          </div>
-          
-          <div className="lg:col-span-2 border p-4 rounded-lg bg-white shadow-md">
-            <h3 className="font-semibold text-lg mb-2">방문 일수 구간별 평균 재구매율 (BarChart)</h3>
-            
+      <div className="flex justify-between items-end border-b pb-2 mb-6">
+        <h1 className="text-3xl font-bold text-gray-800">방문 빈도 및 재구매율 분석</h1>
+        <div className="text-sm text-gray-600">
+          <span className="mr-2">내 타겟 설정:</span>
+          <span className="font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+            {config.targetRegion} / {config.targetAge}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* 사이드바 필터 */}
+        <DataFilter 
+          selectedRegions={selectedRegions}
+          onRegionChange={handleRegionChange}
+          selectedAges={selectedAges}
+          onAgeChange={handleAgeChange}
+        />
+
+        {/* 메인 콘텐츠 */}
+        <div className="flex-grow space-y-6 min-w-0">
+          <div className="bg-white p-6 rounded-xl shadow-lg">
+            <h3 className="text-xl font-semibold text-gray-700 mb-4 flex justify-between">
+              <span>방문 일수별 재구매율</span>
+              <span className="text-sm font-normal text-gray-500 self-center">표본 수: {filteredData.length.toLocaleString()}명</span>
+            </h3>
             {isLoading ? (
-              <p className="text-sm text-gray-500">데이터 로딩 중...</p>
+              <div className="h-80 flex items-center justify-center text-gray-400">데이터 로딩 중...</div>
             ) : (
-              <div style={{ width: '100%', height: 300 }}>
-                <ResponsiveContainer>
-                  <BarChart
-                    data={retentionByVisitDays}
-                    margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
-                  >
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
-                    <YAxis unit="%" />
-                    <Tooltip
-                      formatter={(value: number, name: string) => {
-                        if (name === '재구매율 (%)') return [`${value}%`, '재구매율'];
-                        if (name === '고객 수') return [value.toLocaleString(), '고객 수'];
-                        return [value, name];
-                      }}
-                    />
+                    <YAxis unit="%" domain={[0, 100]} />
+                    <Tooltip formatter={(value: number) => [`${value.toFixed(1)}%`, '재구매율']} />
                     <Legend />
-                    <Bar dataKey="재구매율 (%)" fill="#4ade80" />
+                    <Line type="monotone" dataKey="retentionRate" name="재구매율" stroke="#2563eb" strokeWidth={3} activeDot={{ r: 8 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-lg">
+            <h3 className="text-xl font-semibold text-gray-700 mb-4">방문 빈도별 고객 수 분포</h3>
+            {isLoading ? (
+              <div className="h-64 flex items-center justify-center text-gray-400">데이터 로딩 중...</div>
+            ) : (
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip formatter={(value: number) => [`${value.toLocaleString()}명`, '고객 수']} />
+                    <Legend />
+                    <Bar dataKey="count" name="고객 수" fill="#93c5fd" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

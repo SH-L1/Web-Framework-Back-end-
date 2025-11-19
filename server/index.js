@@ -24,11 +24,34 @@ const CustomerSchema = new mongoose.Schema({
   retained_90: String,
 });
 
+const UserConfigSchema = new mongoose.Schema({
+  userId: { type: String, default: 'admin' },
+  targetRegion: String,
+  targetAge: String,
+});
+
+const MarketingActionSchema = new mongoose.Schema({
+  content: String,
+  createdAt: { type: Date, default: Date.now },
+});
+
 const Customer = mongoose.model('Customer', CustomerSchema, 'customers');
+const UserConfig = mongoose.model('UserConfig', UserConfigSchema, 'user_configs');
+const MarketingAction = mongoose.model('MarketingAction', MarketingActionSchema, 'marketing_actions');
 
 app.get('/api/customers/all', async (req, res) => {
   try {
-    const allCustomers = await Customer.find({});
+    const { region, age } = req.query;
+    let query = {};
+
+    if (region && region !== '전체') {
+      query.region_city = region;
+    }
+    if (age && age !== '전체') {
+      query.age = age;
+    }
+
+    const allCustomers = await Customer.find(query);
     res.json(allCustomers);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -37,8 +60,63 @@ app.get('/api/customers/all', async (req, res) => {
 
 app.get('/api/customers/churn-risk', async (req, res) => {
   try {
-    const churnRiskCustomers = await Customer.find({ retained_90: '0' });
+    const { region, age } = req.query;
+    let query = { retained_90: '0' };
+
+    if (region && region !== '전체') {
+      query.region_city = region;
+    }
+    if (age && age !== '전체') {
+      query.age = age;
+    }
+
+    const churnRiskCustomers = await Customer.find(query);
     res.json(churnRiskCustomers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/config', async (req, res) => {
+  try {
+    let config = await UserConfig.findOne({ userId: 'admin' });
+    if (!config) {
+      config = await UserConfig.create({ userId: 'admin', targetRegion: '전체', targetAge: '전체' });
+    }
+    res.json(config);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/config', async (req, res) => {
+  try {
+    const { targetRegion, targetAge } = req.body;
+    const config = await UserConfig.findOneAndUpdate(
+      { userId: 'admin' },
+      { targetRegion, targetAge },
+      { new: true, upsert: true }
+    );
+    res.json(config);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/marketing', async (req, res) => {
+  try {
+    const actions = await MarketingAction.find().sort({ createdAt: -1 });
+    res.json(actions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/marketing', async (req, res) => {
+  try {
+    const { content } = req.body;
+    const newAction = await MarketingAction.create({ content });
+    res.json(newAction);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

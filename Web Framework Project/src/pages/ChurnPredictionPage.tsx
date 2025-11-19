@@ -1,385 +1,267 @@
-// import React from 'react';
-
-// const ChurnPredictionPage: React.FC = () => {
-//   return (
-//     <div className="p-6 max-w-7xl mx-auto">
-//       <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">3. 이탈 예측 및 가상 시나리오</h1>
-//       <div className="bg-white p-6 rounded-xl shadow-lg min-h-[400px]">
-//         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-//           <div className="lg:col-span-1 border p-4 rounded-lg bg-blue-50 shadow-md">
-//             <h3 className="font-semibold text-xl text-blue-700 mb-3">What-If 시뮬레이션</h3>
-//             <p className="text-sm text-gray-600 mb-2">평균 방문 일수 조정:</p>
-//             <input type="range" className="w-full" min="1" max="30" defaultValue="15" />
-//             <p className="mt-4 font-bold">예상 재구매율 변화: <span className="text-red-500">+X%</span></p>
-//             <p className="font-bold">예상 매출 증감: <span className="text-red-500">+W,XXX,XXX 원</span></p>
-//           </div>
-          
-//           <div className="lg:col-span-2 border p-4 rounded-lg bg-red-50 shadow-md">
-//             <h3 className="font-semibold text-xl text-red-700 mb-3">이탈 위험 고객 목록 (RiskCustomerTable)</h3>
-//             <p className="text-sm text-gray-600 mb-4">
-//               *분류된 고객 정보를 테이블 컴포넌트에 전달하여 한눈에 볼 수 있도록 테이블 생성*
-//               <br />
-//               (4.1.6 세그먼트 내보내기 기능 구현)
-//             </p>
-//           </div>
-//         </div>
-        
-//         <div className="mt-8 border p-6 rounded-xl bg-yellow-50 shadow-md">
-//              <h3 className="font-semibold text-xl text-yellow-700 mb-3">마케팅 템플릿 추천 및 메모 (4.1.5)</h3>
-//              <p className="text-sm text-gray-600">
-//                인사이트 기반으로 "점심시간 1시간 무료 쿠폰" 등의 템플릿 추천 기능 구현 예정.
-//              </p>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default ChurnPredictionPage;
-
 import React, { useState, useEffect, useMemo } from 'react';
-import Papa from 'papaparse';
+import { useUserConfig } from '../context/UserConfigContext';
+import DataFilter from '../components/dashboard/DataFilter';
 
-// --- 1. [추가] 필터링을 위한 한글/영어 변환 맵 ---
-const KOREAN_TO_ENGLISH_AGE_MAP: { [key: string]: string } = {
-  '10대': 'Teens',
-  '20대': 'Twenties',
-  '30대': 'Thirties',
-  '40대': 'Forties+', // 40대는 Forties+와 매칭
-  '기타': 'Others',
-};
-
-const KOREAN_TO_ENGLISH_REGION_MAP: { [key: string]: string } = {
-  '서울': 'Seoul', '경기': 'Gyeonggi-do', '인천': 'Incheon', '강원': 'Gangwon-do',
-  '충남': 'Chungcheongnam-do', '충북': 'Chungcheongbuk-do', '대전': 'Daejeon',
-  '세종': 'Sejong', '경남': 'Gyeongsangnam-do', '경북': 'Gyeongsangbuk-do',
-  '부산': 'Busan', '울산': 'Ulsan', '대구': 'Daegu', '전남': 'Jeollanam-do',
-  '전북': 'Jeollabuk-do', '광주': 'Gwangju', '제주': 'Jeju', '기타': 'Others',
-};
-
-// 가격 범위 맵 (Key: 한글 라벨, Value: [최소, 최대])
-const PRICE_RANGE_MAP: { [key: string]: [number, number] } = {
-  '~ 10,000원': [0, 10000],
-  '10,001 ~ 50,000원': [10001, 50000],
-  '50,001 ~ 100,000원': [50001, 100000],
-  '100,001원 ~': [100001, Infinity],
-};
-// ----------------------------------------------------
-
-// 2. [수정] CsvData 타입 (필요한 컬럼만 남김)
 interface CsvData {
   uid: string;
-  region_city_group: string;
   region_city: string;
-  age_group: string;
   age: string;
   visit_days: string;
   total_payment_may: string;
   retained_90: string;
 }
 
-// 3. [추가] App.tsx로부터 받을 props 타입
-interface ChurnPredictionPageProps {
-  selectedAgeGroups: string[];
-  selectedRegions: string[];
-  selectedPriceRanges: string[];
+interface MarketingAction {
+  _id: string;
+  content: string;
+  createdAt: string;
 }
 
-// 4. [수정] props 받기
-const ChurnPredictionPage: React.FC<ChurnPredictionPageProps> = ({
-  selectedAgeGroups,
-  selectedRegions,
-  selectedPriceRanges,
-}) => {
-  const [originalData, setOriginalData] = useState<CsvData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [simulationDays, setSimulationDays] = useState(15);
+const MARKETING_TEMPLATES = [
+  { title: "점심시간 쿠폰", content: "고객님! 점심시간(12-13시) 방문 시 1시간 무료 쿠폰을 드립니다. 맛있는 식사와 게임을 즐겨보세요!" },
+  { title: "주말 올나이트 할인", content: "이번 주말, 밤샘 게임 어떠세요? 심야 정액권 20% 할인 쿠폰을 보내드립니다." },
+  { title: "장기 미방문 혜택", content: "오랜만에 뵙고 싶습니다! 지금 방문하시면 아메리카노 1잔 무료 쿠폰을 사용하실 수 있습니다." },
+  { title: "신규 게임 출시 이벤트", content: "화제의 신작 게임! PC방에서 플레이하고 1시간 추가 충전 혜택을 받아가세요." }
+];
 
-  // 5. CSV 로딩 (수정 없음)
+const ChurnPredictionPage: React.FC = () => {
+  const { config } = useUserConfig();
+  const [allData, setAllData] = useState<CsvData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // 로컬 필터
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [selectedAges, setSelectedAges] = useState<string[]>([]);
+
+  // 시뮬레이션 및 마케팅 상태
+  const [simulationDays, setSimulationDays] = useState(15);
+  const [marketingMemo, setMarketingMemo] = useState('');
+  const [savedActions, setSavedActions] = useState<MarketingAction[]>([]);
+
   useEffect(() => {
-    const csvFilePath = '/data.csv';
-    fetch(csvFilePath)
-      .then((response) => response.text())
-      .then((csvText) => {
-        Papa.parse(csvText, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results: Papa.ParseResult<CsvData>) => {
-            setOriginalData(results.data);
-            setIsLoading(false);
-          },
-          error: (error: any) => { console.error('CSV 파싱 에러:', error); setIsLoading(false); },
-        });
-      })
-      .catch((err) => { console.error('파일 읽기 에러:', err); setIsLoading(false); });
+    const fetchData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const [dataRes, marketingRes] = await Promise.all([
+          fetch('http://localhost:5000/api/customers/all'),
+          fetch('http://localhost:5000/api/marketing')
+        ]);
+
+        if (!dataRes.ok) throw new Error('데이터 로드 실패');
+        const data = await dataRes.json();
+        setAllData(data);
+
+        if (marketingRes.ok) {
+          const actions = await marketingRes.json();
+          setSavedActions(actions);
+        }
+      } catch (err) {
+        if (err instanceof Error) setError(err.message);
+        else setError('알 수 없는 오류');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchData();
   }, []);
 
-  // 6. [수정] 필터가 적용된 데이터를 계산하는 useMemo
+  // 설정값 연동
+  useEffect(() => {
+    if (config.targetRegion && config.targetRegion !== '전체') setSelectedRegions([config.targetRegion]);
+    else setSelectedRegions([]);
+    if (config.targetAge && config.targetAge !== '전체') setSelectedAges([config.targetAge]);
+    else setSelectedAges([]);
+  }, [config]);
+
+  // 필터링
   const filteredData = useMemo(() => {
-    if (isLoading || originalData.length === 0) {
-      return [];
-    }
-    
-    // 6a. 필터링을 위한 영어 키/값 변환
-    const englishAgeGroups = selectedAgeGroups.map(age => KOREAN_TO_ENGLISH_AGE_MAP[age]).filter(Boolean);
-    const englishRegions = selectedRegions.map(region => KOREAN_TO_ENGLISH_REGION_MAP[region]).filter(Boolean);
-    const priceRanges = selectedPriceRanges.map(range => PRICE_RANGE_MAP[range]).filter(Boolean);
-
-    return originalData.filter((c) => {
-      // 6b. 연령대 필터
-      if (
-        englishAgeGroups.length > 0 &&
-        !englishAgeGroups.includes(c.age_group || 'Others')
-      ) {
-        return false;
-      }
-      
-      // 6c. 지역 필터
-      if (
-        englishRegions.length > 0 &&
-        !englishRegions.includes(c.region_city_group || 'Others')
-      ) {
-        return false;
-      }
-
-      // 6d. [새로 추가] 가격 필터
-      if (priceRanges.length > 0) {
-        const payment = Number(c.total_payment_may) || 0;
-        const isInPriceRange = priceRanges.some(([min, max]) => 
-          payment >= min && payment <= max
-        );
-        if (!isInPriceRange) {
-          return false;
-        }
-      }
-      
-      return true; // 모든 필터 통과
+    return allData.filter(item => {
+      const regionMatch = selectedRegions.length === 0 || selectedRegions.includes(item.region_city);
+      const ageMatch = selectedAges.length === 0 || selectedAges.includes(item.age);
+      return regionMatch && ageMatch;
     });
-  }, [originalData, isLoading, selectedAgeGroups, selectedRegions, selectedPriceRanges]);
+  }, [allData, selectedRegions, selectedAges]);
 
-  // 7. [수정] 이하 모든 useMemo가 'filteredData'를 사용하도록 의존성 변경
-  const churnRiskCustomers = useMemo(() => {
-    return filteredData.filter(
-      (customer) => customer.retained_90 === '0'
-    );
+  const churnRiskCustomerList = useMemo(() => {
+    return filteredData.filter(c => c.retained_90 === '0');
   }, [filteredData]);
 
+  // --- (이하 시뮬레이션 로직 및 핸들러는 기존과 동일하나 filteredData를 기반으로 계산) ---
+  const handleRegionChange = (region: string) => setSelectedRegions(prev => prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region]);
+  const handleAgeChange = (age: string) => setSelectedAges(prev => prev.includes(age) ? prev.filter(a => a !== age) : [...prev, age]);
+
+  const handleSaveMemo = async () => {
+    if (!marketingMemo.trim()) return;
+    try {
+      const res = await fetch('http://localhost:5000/api/marketing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: marketingMemo }),
+      });
+      if (res.ok) {
+        const newAction = await res.json();
+        setSavedActions([newAction, ...savedActions]);
+        setMarketingMemo('');
+        alert('저장되었습니다.');
+      }
+    } catch (err) { console.error(err); alert('저장 실패'); }
+  };
+
+  // 시뮬레이션 계산용 통계 (filteredData 기준)
   const baselineStats = useMemo(() => {
-    if (filteredData.length === 0) {
-      return { rate: 0, avgRevenuePerRetained: 0, totalCustomers: 0, baselineRetainedRevenue: 0 };
-    }
-    
+    if (filteredData.length === 0) return { rate: 0, avgRevenuePerRetained: 0, totalCustomers: 0, baselineRetainedRevenue: 0 };
     const retainedCustomers = filteredData.filter(c => c.retained_90 === '1');
     const totalRetained = retainedCustomers.length;
     const totalCustomers = filteredData.length;
-    
-    // [수정] totalCustomers가 0일 때 NaN 방지
     const baselineRate = totalCustomers > 0 ? (totalRetained / totalCustomers) : 0;
-    
     const retainedRevenue = retainedCustomers.reduce((sum, c) => sum + Number(c.total_payment_may), 0);
     const avgRevenuePerRetained = totalRetained > 0 ? (retainedRevenue / totalRetained) : 0;
-    const baselineRetainedRevenue = totalRetained * avgRevenuePerRetained;
-
-    return { rate: baselineRate, avgRevenuePerRetained, totalCustomers, baselineRetainedRevenue };
+    return { rate: baselineRate, avgRevenuePerRetained, totalCustomers, baselineRetainedRevenue: totalRetained * avgRevenuePerRetained };
   }, [filteredData]);
 
-  const retentionRatesByDayGroup = useMemo(() => {
-    if (filteredData.length === 0) return {};
-
-    const segments: { [key: string]: { total: number, retained: number } } = {
-      '1일': { total: 0, retained: 0 },
-      '2-3일': { total: 0, retained: 0 },
-      '4-7일': { total: 0, retained: 0 },
-      '8-14일': { total: 0, retained: 0 },
-      '15일+': { total: 0, retained: 0 },
-    };
-
-    filteredData.forEach(customer => {
-      const visitDays = Number(customer.visit_days) || 0;
-      const isRetained = customer.retained_90 === '1';
-
-      let segmentName: keyof typeof segments | null = null;
-      if (visitDays === 1) segmentName = '1일';
-      else if (visitDays >= 2 && visitDays <= 3) segmentName = '2-3일';
-      else if (visitDays >= 4 && visitDays <= 7) segmentName = '4-7일';
-      else if (visitDays >= 8 && visitDays <= 14) segmentName = '8-14일';
-      else if (visitDays >= 15) segmentName = '15일+';
-
-      if (segmentName) {
-        segments[segmentName].total++;
-        if (isRetained) {
-          segments[segmentName].retained++;
-        }
-      }
-    });
-
-    const rates: { [key: string]: number } = {};
-    Object.entries(segments).forEach(([name, counts]) => {
-      rates[name] = (counts.total > 0) ? (counts.retained / counts.total) : 0;
-    });
-    return rates;
-  }, [filteredData]);
-  
-  // (시뮬레이션 로직은 수정 없음, baselineStats 등을 그대로 사용)
+  // Anchor Points 계산
   const rateAnchorPoints = useMemo(() => {
-    if (isLoading || Object.keys(retentionRatesByDayGroup).length === 0) return [];
-    const rates = retentionRatesByDayGroup;
-    const p1 = rates['1일'] || 0;
-    const p2 = rates['2-3일'] || p1;
-    const p3 = rates['4-7일'] || p2;
-    const p4 = rates['8-14일'] || p3;
-    const p5 = rates['15일+'] || p4;
-    return [
-      { day: 1, rate: p1 },
-      { day: 3, rate: p2 },
-      { day: 7, rate: p3 },
-      { day: 14, rate: p4 },
-      { day: 15, rate: p5 }
-    ];
-  }, [retentionRatesByDayGroup, isLoading]);
+    if (filteredData.length === 0) return [];
+    // 간단하게 1일, 3일, 7일, 14일, 15일 이상 구간별 재구매율 계산
+    const getRate = (min: number, max: number) => {
+      const seg = filteredData.filter(c => {
+        const d = Number(c.visit_days);
+        return d >= min && d <= max;
+      });
+      if (seg.length === 0) return 0;
+      const ret = seg.filter(c => c.retained_90 === '1').length;
+      return ret / seg.length;
+    };
+    const p1 = getRate(1, 1);
+    const p2 = getRate(2, 3) || p1;
+    const p3 = getRate(4, 7) || p2;
+    const p4 = getRate(8, 14) || p3;
+    const p5 = getRate(15, 999) || p4;
+    return [{day:1, rate:p1}, {day:3, rate:p2}, {day:7, rate:p3}, {day:14, rate:p4}, {day:15, rate:p5}];
+  }, [filteredData]);
 
-  const getInterpolatedRate = (days: number): number => {
+  const getInterpolatedRate = (days: number) => {
     if (rateAnchorPoints.length === 0) return 0;
     if (days <= 1) return rateAnchorPoints[0].rate;
     if (days >= 15) return rateAnchorPoints[rateAnchorPoints.length - 1].rate;
-
     for (let i = 1; i < rateAnchorPoints.length; i++) {
       const p2 = rateAnchorPoints[i];
       if (days <= p2.day) {
         const p1 = rateAnchorPoints[i - 1];
-        if (p2.day - p1.day === 0) return p1.rate; 
+        if (p2.day - p1.day === 0) return p1.rate;
         const t = (days - p1.day) / (p2.day - p1.day);
         return p1.rate + (p2.rate - p1.rate) * t;
       }
     }
-    return rateAnchorPoints[rateAnchorPoints.length - 1].rate;
+    return rateAnchorPoints[rateAnchorPoints.length-1].rate;
   };
 
   const simulationStats = useMemo(() => {
-    // [수정] 0으로 나누기 방지
-    if (baselineStats.totalCustomers === 0) {
-      return { rateChange: 0, revenueChange: 0, simulatedRate: 0 };
-    }
-    
     const simulatedRate = getInterpolatedRate(simulationDays);
     const simulatedRetainedCount = baselineStats.totalCustomers * simulatedRate;
     const simulatedRevenue = simulatedRetainedCount * baselineStats.avgRevenuePerRetained;
-    
     const rateChange = (simulatedRate - baselineStats.rate) * 100;
     const revenueChange = simulatedRevenue - baselineStats.baselineRetainedRevenue;
-
     return { rateChange, revenueChange, simulatedRate: simulatedRate * 100 };
-  }, [simulationDays, baselineStats, getInterpolatedRate]); // [수정] getInterpolatedRate 추가
+  }, [simulationDays, baselineStats, rateAnchorPoints]);
 
-  // 포맷팅 함수 (수정 없음)
-  const formatPercentage = (num: number) => {
-    const fixedNum = num.toFixed(1);
-    if (num > 0) return `+${fixedNum}%`;
-    return `${fixedNum}%`;
-  };
+  const formatPercentage = (num: number) => (num > 0 ? `+${num.toFixed(1)}%` : `${num.toFixed(1)}%`);
+  const formatCurrency = (num: number) => (num > 0 ? `+${Number(num.toFixed(0)).toLocaleString()} 원` : `${Number(num.toFixed(0)).toLocaleString()} 원`);
 
-  const formatCurrency = (num: number) => {
-    const fixedNum = num.toFixed(0);
-    const formattedNum = Number(fixedNum).toLocaleString();
-    if (num > 0) return `+${formattedNum} 원`;
-    return `${formattedNum} 원`;
-  };
+  if (error) return <div className="p-6 text-red-600">에러: {error}</div>;
 
-  // 8. JSX 렌더링 (수정 없음, filteredData 기반으로 자동 업데이트됨)
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">이탈 예측 및 가상 시나리오</h1>
-      <div className="bg-white p-6 rounded-xl shadow-lg min-h-[400px]">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 border p-4 rounded-lg bg-blue-50 shadow-md">
-            <h3 className="font-semibold text-xl text-blue-700 mb-3">What-If 시뮬레이션</h3>
-            
-            <label htmlFor="simDays" className="text-sm text-gray-600 mb-2 block">
-              방문 일수 조정: 
-              <span className="font-bold text-blue-700 ml-2">{simulationDays}일</span>
-            </label>
-            <input 
-              id="simDays"
-              type="range" 
-              className="w-full" 
-              min="1" 
-              max="15"
-              step="1"
-              value={simulationDays}
-              onChange={(e) => setSimulationDays(Number(e.target.value))}
-            />
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>1일</span>
-              <span>15일</span>
-            </div>
-
-            <div className="mt-4 space-y-2">
-              <p className="font-bold">
-                예상 재구매율: 
-                <span className="text-lg text-blue-800 ml-2">
-                  {isLoading ? '...' : simulationStats.simulatedRate.toFixed(1)}%
-                </span>
-              </p>
-              <p className="font-bold">
-                재구매율 변화: 
-                <span className={simulationStats.rateChange >= 0 ? "text-green-600" : "text-red-500"}>
-                  {isLoading ? '...' : formatPercentage(simulationStats.rateChange)}
-                </span>
-              </p>
-              <p className="font-bold">
-                예상 매출 증감: 
-                <span className={simulationStats.revenueChange >= 0 ? "text-green-600" : "text-red-500"}>
-                  {isLoading ? '...' : formatCurrency(simulationStats.revenueChange)}
-                </span>
-              </p>
-            </div>
-          </div>
-
-          <div className="lg:col-span-2 border p-4 rounded-lg bg-red-50 shadow-md">
-            <h3 className="font-semibold text-xl text-red-700 mb-3">
-              이탈 위험 고객 목록 (총 {churnRiskCustomers.length}명)
-            </h3>
-            
-            {isLoading ? (
-              <p className="text-gray-600">데이터 로딩 중...</p>
-            ) : (
-              <div className="overflow-auto max-h-80"> 
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-red-100 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-red-800 uppercase">UID</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-red-800 uppercase">지역</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-red-800 uppercase">나이</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-red-800 uppercase">5월 결제액</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {churnRiskCustomers.slice(0, 100).map((customer) => (
-                      <tr key={customer.uid}>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{customer.uid}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{customer.region_city}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{customer.age}</td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">
-                          {Number(customer.total_payment_may).toLocaleString()} 원
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            
-            <p className="text-sm text-gray-600 mt-4">
-              * (상위 100개 고객만 표시됩니다)
-            </p>
-          </div>
+      <div className="flex justify-between items-end border-b pb-2 mb-6">
+        <h1 className="text-3xl font-bold text-gray-800">이탈 예측 및 가상 시나리오</h1>
+        <div className="text-sm text-gray-600">
+          타겟: <span className="font-bold text-blue-600">{config.targetRegion} / {config.targetAge}</span>
         </div>
-        
-        <div className="mt-8 border p-6 rounded-xl bg-yellow-50 shadow-md">
-            <h3 className="font-semibold text-xl text-yellow-700 mb-3">마케팅 템플릿 추천 및 메모 (4.1.5)</h3>
-            <p className="text-sm text-gray-600">
-              인사이트 기반으로 "점심시간 1시간 무료 쿠폰" 등의 템플릿 추천 기능 구현 예정.
-            </p>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-6">
+        <DataFilter 
+          selectedRegions={selectedRegions} onRegionChange={handleRegionChange}
+          selectedAges={selectedAges} onAgeChange={handleAgeChange}
+        />
+
+        <div className="flex-grow space-y-6 min-w-0">
+          <div className="bg-white p-6 rounded-xl shadow-lg">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* 시뮬레이션 패널 */}
+              <div className="lg:col-span-1 border p-4 rounded-lg bg-blue-50 shadow-md">
+                <h3 className="font-semibold text-xl text-blue-700 mb-3">What-If 시뮬레이션</h3>
+                <label htmlFor="simDays" className="text-sm text-gray-600 mb-2 block">
+                  방문 빈도(일) 목표 설정: <span className="font-bold text-blue-700 ml-2">{simulationDays}일</span>
+                </label>
+                <input id="simDays" type="range" className="w-full accent-blue-600" min="1" max="15" step="1" value={simulationDays} onChange={(e) => setSimulationDays(Number(e.target.value))} />
+                <div className="flex justify-between text-xs text-gray-500 mb-4"><span>1일</span><span>15일</span></div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span>현재 예상 재구매율:</span> <span className="font-bold">{baselineStats.rate > 0 ? (baselineStats.rate * 100).toFixed(1) : 0}%</span></div>
+                  <div className="flex justify-between"><span>목표 달성 시 재구매율:</span> <span className="font-bold text-blue-800">{isLoading ? '...' : simulationStats.simulatedRate.toFixed(1)}%</span></div>
+                  <div className="border-t pt-2 mt-2">
+                     <p className="font-bold">변화율: <span className={simulationStats.rateChange >= 0 ? "text-green-600" : "text-red-500"}>{formatPercentage(simulationStats.rateChange)}</span></p>
+                     <p className="font-bold">예상 매출 효과: <span className={simulationStats.revenueChange >= 0 ? "text-green-600" : "text-red-500"}>{formatCurrency(simulationStats.revenueChange)}</span></p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 위험 고객 목록 */}
+              <div className="lg:col-span-2 border p-4 rounded-lg bg-red-50 shadow-md flex flex-col h-96">
+                <h3 className="font-semibold text-xl text-red-700 mb-2">이탈 위험 고객 ({churnRiskCustomerList.length}명)</h3>
+                <div className="overflow-auto flex-grow bg-white rounded border border-red-100">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-red-50 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-red-800">UID</th>
+                        <th className="px-3 py-2 text-left font-medium text-red-800">지역</th>
+                        <th className="px-3 py-2 text-left font-medium text-red-800">나이</th>
+                        <th className="px-3 py-2 text-left font-medium text-red-800">5월 결제액</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {churnRiskCustomerList.slice(0, 50).map((c) => (
+                        <tr key={c.uid}>
+                          <td className="px-3 py-2">{c.uid}</td>
+                          <td className="px-3 py-2">{c.region_city}</td>
+                          <td className="px-3 py-2">{c.age}</td>
+                          <td className="px-3 py-2">{Number(c.total_payment_may).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                      {churnRiskCustomerList.length === 0 && <tr><td colSpan={4} className="text-center py-4 text-gray-500">조건에 맞는 위험 고객이 없습니다.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 마케팅 템플릿 섹션 (기존과 동일, 레이아웃만 조정) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-yellow-50 p-6 rounded-xl border shadow-md">
+              <h3 className="font-bold text-yellow-800 mb-4">추천 마케팅 템플릿</h3>
+              <div className="space-y-2">
+                {MARKETING_TEMPLATES.map((t, i) => (
+                  <div key={i} onClick={() => setMarketingMemo(t.content)} className="bg-white p-3 rounded border border-yellow-200 hover:bg-yellow-100 cursor-pointer">
+                    <div className="font-bold text-yellow-900 text-xs">{t.title}</div>
+                    <div className="text-xs text-gray-600 truncate">{t.content}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-xl border shadow-md flex flex-col">
+              <h3 className="font-bold text-gray-800 mb-4">실행 메모</h3>
+              <textarea className="flex-grow border rounded p-2 text-sm mb-2" rows={3} value={marketingMemo} onChange={e => setMarketingMemo(e.target.value)} placeholder="내용을 입력하세요..." />
+              <button onClick={handleSaveMemo} className="bg-blue-600 text-white py-2 rounded hover:bg-blue-700 text-sm mb-4">저장</button>
+              <div className="flex-grow overflow-y-auto h-32 border-t pt-2">
+                {savedActions.map(a => (
+                  <div key={a._id} className="text-xs border-b py-1 text-gray-600">{a.content}</div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

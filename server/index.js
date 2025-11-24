@@ -15,9 +15,11 @@ mongoose.connect(MONGODB_URI)
   .then(() => console.log('MongoDB에 성공적으로 연결되었습니다.'))
   .catch(err => console.error('MongoDB 연결 실패:', err));
 
+// ★ [수정됨] region_city_group 필드 추가
 const CustomerSchema = new mongoose.Schema({
   uid: String,
-  region_city: String,
+  region_city_group: String, // 예: Gyeonggi-do
+  region_city: String,       // 예: Yongin
   age: String,
   visit_days: Number,
   total_payment_may: Number,
@@ -39,39 +41,12 @@ const Customer = mongoose.model('Customer', CustomerSchema, 'customers');
 const UserConfig = mongoose.model('UserConfig', UserConfigSchema, 'user_configs');
 const MarketingAction = mongoose.model('MarketingAction', MarketingActionSchema, 'marketing_actions');
 
+// --- API 라우트 ---
+
 app.get('/api/customers/all', async (req, res) => {
   try {
-    const { region, age } = req.query;
-    let query = {};
-
-    if (region && region !== '전체') {
-      query.region_city = region;
-    }
-    if (age && age !== '전체') {
-      query.age = age;
-    }
-
-    const allCustomers = await Customer.find(query);
+    const allCustomers = await Customer.find({});
     res.json(allCustomers);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/customers/churn-risk', async (req, res) => {
-  try {
-    const { region, age } = req.query;
-    let query = { retained_90: '0' };
-
-    if (region && region !== '전체') {
-      query.region_city = region;
-    }
-    if (age && age !== '전체') {
-      query.age = age;
-    }
-
-    const churnRiskCustomers = await Customer.find(query);
-    res.json(churnRiskCustomers);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -117,6 +92,16 @@ app.post('/api/marketing', async (req, res) => {
     const { content } = req.body;
     const newAction = await MarketingAction.create({ content });
     res.json(newAction);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/marketing/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await MarketingAction.findByIdAndDelete(id);
+    res.json({ message: 'Deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

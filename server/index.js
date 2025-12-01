@@ -15,11 +15,10 @@ mongoose.connect(MONGODB_URI)
   .then(() => console.log('MongoDB에 성공적으로 연결되었습니다.'))
   .catch(err => console.error('MongoDB 연결 실패:', err));
 
-// ★ [수정됨] region_city_group 필드 추가
 const CustomerSchema = new mongoose.Schema({
   uid: String,
-  region_city_group: String, // 예: Gyeonggi-do
-  region_city: String,       // 예: Yongin
+  region_city_group: String,
+  region_city: String,
   age: String,
   visit_days: Number,
   total_payment_may: Number,
@@ -27,21 +26,26 @@ const CustomerSchema = new mongoose.Schema({
 });
 
 const UserConfigSchema = new mongoose.Schema({
-  userId: { type: String, default: 'admin' },
+  userId: String,
   targetRegion: String,
   targetAge: String,
 });
 
 const MarketingActionSchema = new mongoose.Schema({
+  userId: String, 
   content: String,
   createdAt: { type: Date, default: Date.now },
+});
+
+const UserSchema = new mongoose.Schema({
+  username: String,
+  password: String, 
 });
 
 const Customer = mongoose.model('Customer', CustomerSchema, 'customers');
 const UserConfig = mongoose.model('UserConfig', UserConfigSchema, 'user_configs');
 const MarketingAction = mongoose.model('MarketingAction', MarketingActionSchema, 'marketing_actions');
-
-// --- API 라우트 ---
+const User = mongoose.model('User', UserSchema, 'users');
 
 app.get('/api/customers/all', async (req, res) => {
   try {
@@ -52,11 +56,30 @@ app.get('/api/customers/all', async (req, res) => {
   }
 });
 
-app.get('/api/config', async (req, res) => {
+app.post('/api/login', async (req, res) => {
   try {
-    let config = await UserConfig.findOne({ userId: 'admin' });
+    const { username, password } = req.body;
+    let user = await User.findOne({ username });
+    
+    if (!user) {
+      user = await User.create({ username, password });
+    } else {
+      if (user.password !== password) {
+        return res.status(401).json({ error: '비밀번호가 일치하지 않습니다.' });
+      }
+    }
+    res.json({ userId: user._id, username: user.username });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/config/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    let config = await UserConfig.findOne({ userId });
     if (!config) {
-      config = await UserConfig.create({ userId: 'admin', targetRegion: '전체', targetAge: '전체' });
+      config = await UserConfig.create({ userId, targetRegion: '전체', targetAge: '전체' });
     }
     res.json(config);
   } catch (err) {
@@ -66,9 +89,9 @@ app.get('/api/config', async (req, res) => {
 
 app.post('/api/config', async (req, res) => {
   try {
-    const { targetRegion, targetAge } = req.body;
+    const { userId, targetRegion, targetAge } = req.body;
     const config = await UserConfig.findOneAndUpdate(
-      { userId: 'admin' },
+      { userId },
       { targetRegion, targetAge },
       { new: true, upsert: true }
     );
@@ -78,9 +101,10 @@ app.post('/api/config', async (req, res) => {
   }
 });
 
-app.get('/api/marketing', async (req, res) => {
+app.get('/api/marketing/:userId', async (req, res) => {
   try {
-    const actions = await MarketingAction.find().sort({ createdAt: -1 });
+    const { userId } = req.params;
+    const actions = await MarketingAction.find({ userId }).sort({ createdAt: -1 });
     res.json(actions);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -89,8 +113,8 @@ app.get('/api/marketing', async (req, res) => {
 
 app.post('/api/marketing', async (req, res) => {
   try {
-    const { content } = req.body;
-    const newAction = await MarketingAction.create({ content });
+    const { userId, content } = req.body;
+    const newAction = await MarketingAction.create({ userId, content });
     res.json(newAction);
   } catch (err) {
     res.status(500).json({ error: err.message });

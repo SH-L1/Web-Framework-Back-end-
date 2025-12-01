@@ -4,7 +4,7 @@ import DataFilter, { REGION_MAP } from '../components/dashboard/DataFilter';
 
 interface CsvData {
   uid: string;
-  region_city_group: string; // ★ 추가됨
+  region_city_group: string;
   region_city: string;
   age: string;
   visit_days: string;
@@ -26,7 +26,7 @@ const MARKETING_TEMPLATES = [
 ];
 
 const ChurnPredictionPage: React.FC = () => {
-  const { config } = useUserConfig();
+  const { config, user } = useUserConfig();
   const [allData, setAllData] = useState<CsvData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,10 +42,12 @@ const ChurnPredictionPage: React.FC = () => {
     const fetchData = async () => {
       setIsLoading(true);
       setError(null);
+      if (!user) return; // 유저 정보가 없으면 로드 중단
+
       try {
         const [dataRes, marketingRes] = await Promise.all([
           fetch('http://localhost:5000/api/customers/all'),
-          fetch('http://localhost:5000/api/marketing')
+          fetch(`http://localhost:5000/api/marketing/${user.userId}`) // 유저별 메모 로드
         ]);
         if (!dataRes.ok) throw new Error('데이터 로드 실패');
         setAllData(await dataRes.json());
@@ -58,7 +60,7 @@ const ChurnPredictionPage: React.FC = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (config.targetRegion && config.targetRegion !== '전체') setSelectedRegions([config.targetRegion]);
@@ -67,11 +69,9 @@ const ChurnPredictionPage: React.FC = () => {
     else setSelectedAges([]);
   }, [config]);
 
-  // ★ 필터링 로직 수정
   const filteredData = useMemo(() => {
     return allData.filter(item => {
-      const itemRegion = (item.region_city_group || '').trim(); // 'Gyeonggi-do'
-      
+      const itemRegion = (item.region_city_group || '').trim();
       let itemAgeGroup = '';
       const ageNum = parseInt(item.age);
       if (!isNaN(ageNum)) {
@@ -81,10 +81,8 @@ const ChurnPredictionPage: React.FC = () => {
         else if (ageNum >= 40 && ageNum < 50) itemAgeGroup = '40s';
         else if (ageNum >= 50) itemAgeGroup = '50s';
       }
-
       const regionMatch = selectedRegions.length === 0 || selectedRegions.includes(itemRegion);
       const ageMatch = selectedAges.length === 0 || selectedAges.includes(itemAgeGroup);
-
       return regionMatch && ageMatch;
     });
   }, [allData, selectedRegions, selectedAges]);
@@ -95,12 +93,12 @@ const ChurnPredictionPage: React.FC = () => {
   const handleAgeChange = (age: string) => setSelectedAges(prev => prev.includes(age) ? prev.filter(a => a !== age) : [...prev, age]);
 
   const handleSaveMemo = async () => {
-    if (!marketingMemo.trim()) return;
+    if (!marketingMemo.trim() || !user) return;
     try {
       const res = await fetch('http://localhost:5000/api/marketing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: marketingMemo }),
+        body: JSON.stringify({ userId: user.userId, content: marketingMemo }), // 유저 ID 포함
       });
       if (res.ok) {
         setSavedActions([await res.json(), ...savedActions]);
@@ -117,13 +115,10 @@ const ChurnPredictionPage: React.FC = () => {
       if (res.ok) {
         setSavedActions(savedActions.filter(action => action._id !== id));
       }
-    } catch (err) {
-      console.error(err);
-      alert('삭제 실패');
-    }
+    } catch (err) { console.error(err); alert('삭제 실패'); }
   };
 
-  // --- 통계 로직 ---
+  // ... (통계 및 렌더링 로직은 기존과 동일) ...
   const baselineStats = useMemo(() => {
     if (filteredData.length === 0) return { rate: 0, avgRevenuePerRetained: 0, totalCustomers: 0, baselineRetainedRevenue: 0 };
     const retained = filteredData.filter(c => c.retained_90 === '1');
@@ -176,7 +171,7 @@ const ChurnPredictionPage: React.FC = () => {
       <div className="flex justify-between items-end border-b pb-2 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">이탈 예측 및 가상 시나리오</h1>
         <div className="text-sm text-gray-600">
-          타겟 설정: <span className="font-bold text-blue-600">
+          기본 타겟: <span className="font-bold text-blue-600">
             {config.targetRegion === '전체' ? '전국' : REGION_MAP[config.targetRegion] || config.targetRegion} / {config.targetAge.replace('s', '대')}
           </span>
         </div>

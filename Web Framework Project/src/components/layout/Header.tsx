@@ -11,11 +11,10 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ currentPage, onNavigate }) => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false); // 프로필 팝업 상태
-  const { config } = useUserConfig();
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const { config, user, logout } = useUserConfig();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 외부 클릭 시 팝업 닫기
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -26,7 +25,6 @@ const Header: React.FC<HeaderProps> = ({ currentPage, onNavigate }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 설정값 한글 변환
   const displayRegion = config.targetRegion === '전체' ? '전국' : (REGION_MAP[config.targetRegion] || config.targetRegion);
   const displayAge = config.targetAge === '전체' ? '전연령' : config.targetAge.replace('s', '대');
 
@@ -68,23 +66,21 @@ const Header: React.FC<HeaderProps> = ({ currentPage, onNavigate }) => {
                </span>
             </div>
 
-            {/* 프로필 드롭다운 */}
             <div className="relative" ref={dropdownRef}>
               <button 
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                 className="flex items-center space-x-2 focus:outline-none p-1 rounded-full hover:bg-gray-100 transition-colors"
               >
                 <div className="h-9 w-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm border-2 border-white ring-2 ring-gray-100 cursor-pointer">
-                  A
+                  {user?.username.charAt(0).toUpperCase()}
                 </div>
               </button>
 
-              {/* 팝업 메뉴 */}
               {isProfileOpen && (
                 <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 ring-1 ring-black ring-opacity-5 transform transition-all origin-top-right z-50">
                   <div className="px-4 py-3 border-b border-gray-100">
                     <p className="text-sm text-gray-500">환영합니다!</p>
-                    <p className="text-sm font-bold text-gray-900 truncate">Admin 님</p>
+                    <p className="text-sm font-bold text-gray-900 truncate">{user?.username} 님</p>
                   </div>
                   <button
                     onClick={() => {
@@ -96,7 +92,10 @@ const Header: React.FC<HeaderProps> = ({ currentPage, onNavigate }) => {
                     타겟 설정 변경
                   </button>
                   <button
-                    onClick={() => alert('로그아웃 기능은 준비 중입니다.')}
+                    onClick={() => {
+                      logout();
+                      setIsProfileOpen(false);
+                    }}
                     className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
                   >
                     로그아웃

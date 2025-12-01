@@ -5,59 +5,101 @@ interface UserConfig {
   targetAge: string;
 }
 
+interface User {
+  userId: string;
+  username: string;
+}
+
 interface UserConfigContextType {
+  user: User | null;
   config: UserConfig;
-  updateConfig: (newConfig: UserConfig) => Promise<void>;
   isLoading: boolean;
+  login: (username: string, password: string) => Promise<boolean>;
+  logout: () => void;
+  updateConfig: (newConfig: UserConfig) => Promise<void>;
 }
 
 const UserConfigContext = createContext<UserConfigContextType | undefined>(undefined);
 
 export const UserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
   const [config, setConfig] = useState<UserConfig>({ targetRegion: '전체', targetAge: '전체' });
   const [isLoading, setIsLoading] = useState(true);
 
+  // 초기 로드 시 로컬 스토리지 및 설정 확인
   useEffect(() => {
-    // 초기 로드 시 백엔드에서 설정 가져오기 (실패 시 기본값 유지)
-    fetch('http://localhost:5000/api/config')
-      .then((res) => {
-        if (!res.ok) throw new Error('Config fetch failed');
-        return res.json();
-      })
-      .then((data) => {
-        if (data) {
-          setConfig({
-            targetRegion: data.targetRegion || '전체',
-            targetAge: data.targetAge || '전체',
-          });
-        }
-        setIsLoading(false);
-      })
-      .catch((err) => {
-        console.error('설정 로드 실패 (백엔드 연결 확인 필요):', err);
-        setIsLoading(false);
-      });
+    const initAuth = async () => {
+      const storedUser = localStorage.getItem('pcbang_user');
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+        await fetchConfig(parsedUser.userId);
+      }
+      setIsLoading(false);
+    };
+    initAuth();
   }, []);
 
-  const updateConfig = async (newConfig: UserConfig) => {
-    // UI 즉시 업데이트 (낙관적 업데이트)
-    setConfig(newConfig);
-    
+  const fetchConfig = async (userId: string) => {
     try {
-      const res = await fetch('http://localhost:5000/api/config', {
+      const res = await fetch(`http://localhost:5000/api/config/${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setConfig({
+          targetRegion: data.targetRegion || '전체',
+          targetAge: data.targetAge || '전체',
+        });
+      }
+    } catch (err) {
+      console.error('설정 로드 실패:', err);
+    }
+  };
+
+  const login = async (username: string, password: string) => {
+    try {
+      const res = await fetch('http://localhost:5000/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newConfig),
+        body: JSON.stringify({ username, password }),
       });
-      if (!res.ok) throw new Error('Config update failed');
+      
+      if (res.ok) {
+        const data = await res.json();
+        const userData = { userId: data.userId, username: data.username };
+        setUser(userData);
+        localStorage.setItem('pcbang_user', JSON.stringify(userData));
+        await fetchConfig(data.userId);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('로그인 오류:', err);
+      return false;
+    }
+  };
+
+  const logout = () => {
+    setUser(null);
+    setConfig({ targetRegion: '전체', targetAge: '전체' });
+    localStorage.removeItem('pcbang_user');
+  };
+
+  const updateConfig = async (newConfig: UserConfig) => {
+    if (!user) return;
+    setConfig(newConfig);
+    try {
+      await fetch('http://localhost:5000/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.userId, ...newConfig }),
+      });
     } catch (err) {
       console.error('설정 저장 실패:', err);
-      // 에러 발생 시 사용자에게 알리거나 롤백하는 로직 추가 가능
     }
   };
 
   return (
-    <UserConfigContext.Provider value={{ config, updateConfig, isLoading }}>
+    <UserConfigContext.Provider value={{ user, config, updateConfig, login, logout, isLoading }}>
       {children}
     </UserConfigContext.Provider>
   );
